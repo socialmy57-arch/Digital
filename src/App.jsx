@@ -34,6 +34,10 @@ function App() {
         return;
       }
 
+      // Debug alerts to check environment variables
+      alert('Supabase URL: ' + import.meta.env.VITE_SUPABASE_URL);
+      alert('Anon key starts with: ' + import.meta.env.VITE_SUPABASE_ANON_KEY?.substring(0, 20) + '...');
+
       // Now connect to Supabase
       const { data: dbUser, error: fetchError } = await supabase
         .from('users')
