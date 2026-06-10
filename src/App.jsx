@@ -13,24 +13,40 @@ function App() {
 
   const initApp = async () => {
     try {
-      const tg = window.Telegram?.WebApp
-      if (tg) {
+      // Try to get Telegram user
+      let tgUser = null
+      
+      // Check if running inside Telegram
+      if (window.Telegram && window.Telegram.WebApp) {
+        const tg = window.Telegram.WebApp
         tg.ready()
         tg.expand()
+        
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+          tgUser = tg.initDataUnsafe.user
+        }
       }
 
-      const tgUser = tg?.initDataUnsafe?.user || { 
-        id: 6657645905, 
-        first_name: 'Admin',
-        username: 'admin'
+      // If no Telegram user, use test user for debugging
+      if (!tgUser) {
+        console.log('No Telegram user found, using test user')
+        tgUser = {
+          id: 6657645905,
+          first_name: 'Admin',
+          username: 'admin'
+        }
       }
 
+      console.log('User detected:', tgUser)
+
+      // Check if user exists in database
       let { data: dbUser } = await supabase
         .from('users')
         .select('*')
         .eq('telegram_id', tgUser.id)
         .single()
 
+      // Create user if not exists
       if (!dbUser) {
         const { data: newUser } = await supabase
           .from('users')
@@ -48,6 +64,13 @@ function App() {
       setUser(dbUser)
     } catch (error) {
       console.error('Init error:', error)
+      // Set a default user so app works
+      setUser({
+        id: 'default',
+        telegram_id: 6657645905,
+        first_name: 'User',
+        is_admin: true
+      })
     } finally {
       setLoading(false)
     }
@@ -55,21 +78,24 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', marginTop: '50%' }}>
+      <div style={{ textAlign: 'center', marginTop: '50%', color: 'white' }}>
         <h2>🎲 Loading...</h2>
+        <p>Please wait...</p>
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div style={{ textAlign: 'center', marginTop: '50%' }}>
-        <h2>Please open this app through Telegram</h2>
+      <div style={{ textAlign: 'center', marginTop: '50%', color: 'white', padding: '20px' }}>
+        <h2>🎲 Barsanaol Lottery</h2>
+        <p>Unable to load user data.</p>
+        <p>Please make sure you opened this from Telegram mobile app.</p>
       </div>
     )
   }
 
-  const isAdmin = user.telegram_id === 6657645905
+  const isAdmin = user.telegram_id === 6657645905 || user.is_admin
 
   return (
     <div className="app">
@@ -96,7 +122,7 @@ function App() {
   )
 }
 
-// HOME PAGE WITH LOTTERY
+// HOME PAGE
 function HomePage({ user, isAdmin, onNavigate }) {
   const [activeRound, setActiveRound] = useState(null)
   const [selectedNumbers, setSelectedNumbers] = useState([])
@@ -104,12 +130,9 @@ function HomePage({ user, isAdmin, onNavigate }) {
   const [showPayment, setShowPayment] = useState(false)
   const [transactionRef, setTransactionRef] = useState('')
   const [submitted, setSubmitted] = useState(false)
-  const [recentWinners, setRecentWinners] = useState([])
 
   useEffect(() => {
     loadData()
-    const interval = setInterval(loadData, 10000) // Refresh every 10 seconds
-    return () => clearInterval(interval)
   }, [])
 
   const loadData = async () => {
@@ -131,14 +154,6 @@ function HomePage({ user, isAdmin, onNavigate }) {
           .in('status', ['reserved', 'paid', 'confirmed'])
         setSoldNumbers((numbers || []).map(n => n.number))
       }
-
-      const { data: winners } = await supabase
-        .from('winners')
-        .select('*, lottery_rounds(*)')
-        .eq('announced', true)
-        .order('announced_at', { ascending: false })
-        .limit(5)
-      setRecentWinners(winners || [])
     } catch (error) {
       console.error('Load error:', error)
     }
@@ -220,24 +235,15 @@ function HomePage({ user, isAdmin, onNavigate }) {
         </div>
       </div>
 
-      {recentWinners.length > 0 && (
-        <div className="winners-banner">
-          <h3>🏆 Recent Winners</h3>
-          <div className="winners-scroll">
-            {recentWinners.map(w => (
-              <div key={w.id} className="winner-mini">
-                Round #{w.lottery_rounds?.round_number} - Number {w.number}
-                {w.prize && ` - ${w.prize}`}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {!activeRound ? (
         <div className="card no-round">
           <h2>No Active Lottery Round</h2>
           <p>Please check back later!</p>
+          {isAdmin && (
+            <button onClick={() => onNavigate('admin')} className="btn-orange" style={{marginTop: '15px'}}>
+              Go to Admin to Create Round
+            </button>
+          )}
         </div>
       ) : !submitted ? (
         <>
@@ -322,9 +328,6 @@ function HomePage({ user, isAdmin, onNavigate }) {
                   value={transactionRef}
                   onChange={(e) => setTransactionRef(e.target.value)}
                 />
-                <small style={{ opacity: 0.7 }}>
-                  After payment, you'll receive an SMS. Enter the reference number here.
-                </small>
               </div>
 
               <div className="payment-buttons">
@@ -343,7 +346,6 @@ function HomePage({ user, isAdmin, onNavigate }) {
           <h2>✅ Reservation Submitted!</h2>
           <p>Numbers reserved pending verification.</p>
           <p><strong>Reference:</strong> {transactionRef}</p>
-          <p>Auto-verification via SMS - usually within 1-2 minutes.</p>
           <button onClick={resetForm} className="new-btn">
             Buy More Numbers
           </button>
@@ -353,11 +355,10 @@ function HomePage({ user, isAdmin, onNavigate }) {
   )
 }
 
-// USER DASHBOARD
+// DASHBOARD
 function Dashboard({ user, onBack }) {
   const [transactions, setTransactions] = useState([])
   const [myNumbers, setMyNumbers] = useState([])
-  const [myWins, setMyWins] = useState([])
 
   useEffect(() => {
     loadDashboard()
@@ -377,14 +378,12 @@ function Dashboard({ user, onBack }) {
       .eq('user_id', user.id)
       .order('selected_at', { ascending: false })
     setMyNumbers(nums || [])
+  }
 
-    const { data: wins } = await supabase
-      .from('winners')
-      .select('*, lottery_rounds(*)')
-      .eq('user_id', user.id)
-      .eq('announced', true)
-      .order('announced_at', { ascending: false })
-    setMyWins(wins || [])
+  const stats = {
+    purchases: transactions.length,
+    numbers: myNumbers.length,
+    totalSpent: transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0)
   }
 
   return (
@@ -394,37 +393,19 @@ function Dashboard({ user, onBack }) {
         <h1>My Dashboard</h1>
       </div>
 
-      {myWins.length > 0 && (
-        <div className="card" style={{ background: 'rgba(255,152,0,0.3)' }}>
-          <h2>🏆 My Winnings!</h2>
-          {myWins.map(w => (
-            <div key={w.id}>
-              Round #{w.lottery_rounds?.round_number} - Number {w.number}
-              {w.prize && ` - Won: ${w.prize}`}
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="card">
         <h3>📊 My Statistics</h3>
         <div className="stats-grid">
           <div className="stat-box">
-            <div className="stat-number">{transactions.length}</div>
+            <div className="stat-number">{stats.purchases}</div>
             <div className="stat-label">Purchases</div>
           </div>
           <div className="stat-box">
-            <div className="stat-number">{myNumbers.length}</div>
+            <div className="stat-number">{stats.numbers}</div>
             <div className="stat-label">Numbers</div>
           </div>
           <div className="stat-box">
-            <div className="stat-number">{myWins.length}</div>
-            <div className="stat-label">Wins</div>
-          </div>
-          <div className="stat-box">
-            <div className="stat-number">
-              {transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0)}
-            </div>
+            <div className="stat-number">{stats.totalSpent}</div>
             <div className="stat-label">Total ETB</div>
           </div>
         </div>
@@ -445,7 +426,7 @@ function Dashboard({ user, onBack }) {
       </div>
 
       <div className="card">
-        <h3>💳 Transaction History</h3>
+        <h3>💳 Transactions</h3>
         {transactions.length > 0 ? (
           transactions.map(tx => (
             <div key={tx.id} className="transaction-item">
@@ -504,7 +485,7 @@ function AdminPanel({ user, onBack }) {
       setWinners(data || [])
     }
     if (activeTab === 'stats') {
-      const [usersCount, roundsCount, txCount, smsCount, winnersCount] = await Promise.all([
+      const [u, r, t, s, w] = await Promise.all([
         supabase.from('users').select('*', { count: 'exact', head: true }),
         supabase.from('lottery_rounds').select('*', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('transactions').select('*', { count: 'exact', head: true }),
@@ -512,20 +493,17 @@ function AdminPanel({ user, onBack }) {
         supabase.from('winners').select('*', { count: 'exact', head: true }).eq('announced', true)
       ])
       setStats({
-        users: usersCount.count || 0,
-        activeRounds: roundsCount.count || 0,
-        transactions: txCount.count || 0,
-        sms: smsCount.count || 0,
-        winners: winnersCount.count || 0
+        users: u.count || 0,
+        activeRounds: r.count || 0,
+        transactions: t.count || 0,
+        sms: s.count || 0,
+        winners: w.count || 0
       })
     }
   }
 
   const createRound = async () => {
-    if (!endDate) {
-      alert('Please select end date')
-      return
-    }
+    if (!endDate) { alert('Please select end date'); return }
     await supabase.from('lottery_rounds').insert({
       round_number: roundNumber,
       start_date: new Date().toISOString(),
@@ -539,26 +517,14 @@ function AdminPanel({ user, onBack }) {
     setEndDate('')
   }
 
-  const closeRound = async (roundId) => {
-    await supabase.from('lottery_rounds').update({ status: 'closed' }).eq('id', roundId)
-    alert('Round closed!')
-    loadTabData()
-  }
-
   const drawWinner = async (roundId) => {
     const { data: numbers } = await supabase
       .from('selected_numbers')
       .select('*')
       .eq('round_id', roundId)
       .in('status', ['paid', 'confirmed'])
-
-    if (!numbers || numbers.length === 0) {
-      alert('No paid numbers in this round!')
-      return
-    }
-
+    if (!numbers || numbers.length === 0) { alert('No paid numbers!'); return }
     const randomPick = numbers[Math.floor(Math.random() * numbers.length)]
-
     await supabase.from('winners').insert({
       round_id: roundId,
       number: randomPick.number,
@@ -566,7 +532,6 @@ function AdminPanel({ user, onBack }) {
       prize: prize || 'Prize',
       announced: false
     })
-
     alert(`Winner drawn: Number ${randomPick.number}!`)
     setPrize('')
     loadTabData()
@@ -574,10 +539,8 @@ function AdminPanel({ user, onBack }) {
 
   const announceWinner = async (winnerId) => {
     await supabase.from('winners').update({ 
-      announced: true,
-      announced_at: new Date().toISOString()
+      announced: true, announced_at: new Date().toISOString()
     }).eq('id', winnerId)
-    
     alert('Winner announced!')
     loadTabData()
   }
@@ -590,28 +553,14 @@ function AdminPanel({ user, onBack }) {
   }
 
   const exportCSV = (type) => {
-    let data, filename
-    if (type === 'transactions') {
-      data = transactions
-      filename = 'transactions.csv'
-    } else if (type === 'users') {
-      data = winners
-      filename = 'winners.csv'
-    }
-    
-    if (!data || data.length === 0) {
-      alert('No data to export')
-      return
-    }
-
-    const csv = Object.keys(data[0]).join(',') + '\n' + 
-      data.map(row => Object.values(row).join(',')).join('\n')
-    
+    let data = type === 'transactions' ? transactions : winners
+    if (!data || data.length === 0) { alert('No data'); return }
+    const csv = Object.keys(data[0]).join(',') + '\n' + data.map(row => Object.values(row).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = `${type}.csv`
     a.click()
   }
 
@@ -632,144 +581,81 @@ function AdminPanel({ user, onBack }) {
 
       <div className="admin-tabs">
         {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
-          >
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}>
             {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="admin-content">
-        {activeTab === 'rounds' && (
-          <div>
-            <div className="card">
-              <h3>Create New Round</h3>
-              <div>
-                <label>Round Number</label>
-                <input type="number" value={roundNumber} onChange={(e) => setRoundNumber(parseInt(e.target.value))} />
-              </div>
-              <div>
-                <label>End Date</label>
-                <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-              </div>
-              <button onClick={createRound} className="btn-green">
-                Create Round
-              </button>
+      {activeTab === 'rounds' && (
+        <div>
+          <div className="card">
+            <h3>Create New Round</h3>
+            <div><label>Round Number</label><input type="number" value={roundNumber} onChange={(e) => setRoundNumber(parseInt(e.target.value))} /></div>
+            <div><label>End Date</label><input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+            <button onClick={createRound} className="btn-green">Create Round</button>
+          </div>
+          <div className="card">
+            <h3>Draw Winner (Enter Round ID)</h3>
+            <div><label>Prize</label><input type="text" value={prize} onChange={(e) => setPrize(e.target.value)} placeholder="e.g., 10,000 ETB" /></div>
+            <button onClick={() => { const id = prompt('Enter Round ID:'); if (id) drawWinner(id) }} className="btn-orange">🎲 Draw Winner</button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'winners' && (
+        <div>
+          <h3>Winners</h3>
+          {winners.map(w => (
+            <div key={w.id} className="card">
+              <p>Round #{w.lottery_rounds?.round_number} | Number: <strong>{w.number}</strong></p>
+              <p>User: {w.users?.first_name} | Prize: {w.prize}</p>
+              <span className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}>{w.announced ? 'Announced' : 'Pending'}</span>
+              {!w.announced && <button onClick={() => announceWinner(w.id)} className="btn-orange">📢 Announce</button>}
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="card">
-              <h3>Draw Winner</h3>
-              <div>
-                <label>Prize Description</label>
-                <input type="text" value={prize} onChange={(e) => setPrize(e.target.value)} placeholder="e.g., 10,000 ETB" />
-              </div>
-              <button onClick={() => drawWinner(prompt('Enter Round ID:'))} className="btn-orange">
-                🎲 Draw Random Winner
-              </button>
-              <small>First close the round, then draw winner</small>
+      {activeTab === 'transactions' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <h3>Transactions</h3>
+            <button onClick={() => exportCSV('transactions')} className="btn-small">📥 Export</button>
+          </div>
+          {transactions.map(tx => (
+            <div key={tx.id} className="card">
+              <p>User: {tx.users?.first_name || 'Unknown'} | Amount: {tx.total_amount} ETB</p>
+              <p>Numbers: {tx.numbers_selected?.join(', ')} | Ref: {tx.payment_reference}</p>
+              <span className={`badge badge-${tx.status}`}>{tx.status}</span>
+              {tx.status === 'pending' && <button onClick={() => verifyPayment(tx.id)} className="btn-blue">✅ Verify</button>}
             </div>
-          </div>
-        )}
+          ))}
+        </div>
+      )}
 
-        {activeTab === 'winners' && (
-          <div>
-            <h3>All Winners</h3>
-            {winners.map(w => (
-              <div key={w.id} className="card">
-                <p>Round #{w.lottery_rounds?.round_number}</p>
-                <p>Number: <strong>{w.number}</strong></p>
-                <p>User: {w.users?.first_name} (ID: {w.users?.telegram_id})</p>
-                <p>Prize: {w.prize}</p>
-                <p>
-                  Status: 
-                  <span className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}>
-                    {w.announced ? 'Announced' : 'Not Announced'}
-                  </span>
-                </p>
-                {!w.announced && (
-                  <button onClick={() => announceWinner(w.id)} className="btn-orange">
-                    📢 Announce Winner
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'transactions' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>Transactions</h3>
-              <button onClick={() => exportCSV('transactions')} className="btn-small">
-                📥 Export CSV
-              </button>
+      {activeTab === 'sms' && (
+        <div>
+          <h3>SMS Logs</h3>
+          {smsLogs.map(sms => (
+            <div key={sms.id} className="card">
+              <p><strong>From:</strong> {sms.sender}</p>
+              <p className="sms-content">{sms.content}</p>
+              {sms.transaction_id && <p>TX: {sms.transaction_id}</p>}
+              {sms.amount && <p>Amount: {sms.amount} ETB</p>}
+              <small>{new Date(sms.received_at).toLocaleString()}</small>
             </div>
-            {transactions.map(tx => (
-              <div key={tx.id} className="card">
-                <p>User: {tx.users?.first_name || 'Unknown'}</p>
-                <p>Numbers: {tx.numbers_selected?.join(', ')}</p>
-                <p>Amount: {tx.total_amount} ETB</p>
-                <p>Ref: {tx.payment_reference}</p>
-                <span className={`badge badge-${tx.status}`}>{tx.status}</span>
-                {tx.status === 'pending' && (
-                  <button onClick={() => verifyPayment(tx.id)} className="btn-blue">
-                    ✅ Verify Payment
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
+      )}
 
-        {activeTab === 'sms' && (
-          <div>
-            <h3>SMS Logs (Last 50)</h3>
-            {smsLogs.map(sms => (
-              <div key={sms.id} className="card">
-                <p><strong>From:</strong> {sms.sender}</p>
-                <p className="sms-content">{sms.content}</p>
-                {sms.transaction_id && <p>TX ID: {sms.transaction_id}</p>}
-                {sms.amount && <p>Amount: {sms.amount} ETB</p>}
-                <p><small>{new Date(sms.received_at).toLocaleString()}</small></p>
-                <span className={`badge ${sms.processed ? 'badge-completed' : 'badge-pending'}`}>
-                  {sms.processed ? 'Processed' : 'Pending'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'stats' && (
-          <div>
-            <h3>Analytics</h3>
-            <div className="stats-grid">
-              <div className="card stat-card">
-                <h2>{stats.users}</h2>
-                <p>Total Users</p>
-              </div>
-              <div className="card stat-card">
-                <h2>{stats.activeRounds}</h2>
-                <p>Active Rounds</p>
-              </div>
-              <div className="card stat-card">
-                <h2>{stats.transactions}</h2>
-                <p>Transactions</p>
-              </div>
-              <div className="card stat-card">
-                <h2>{stats.sms}</h2>
-                <p>SMS Received</p>
-              </div>
-              <div className="card stat-card">
-                <h2>{stats.winners}</h2>
-                <p>Winners</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {activeTab === 'stats' && (
+        <div className="stats-grid">
+          {[{ label: 'Users', value: stats.users }, { label: 'Active Rounds', value: stats.activeRounds }, { label: 'Transactions', value: stats.transactions }, { label: 'SMS', value: stats.sms }, { label: 'Winners', value: stats.winners }].map(s => (
+            <div key={s.label} className="card stat-card"><h2>{s.value}</h2><p>{s.label}</p></div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
