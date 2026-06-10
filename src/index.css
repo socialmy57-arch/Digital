@@ -1,0 +1,68 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  color: white;
+}
+
+#root {
+  min-height: 100vh;
+  padding: 15px;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+input, select {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 16px;
+  margin: 10px 0;
+  background: white;
+}
+
+.card {
+  background: rgba(255,255,255,0.15);
+  padding: 20px;
+  border-radius: 12px;
+  margin: 15px 0;
+  backdrop-filter: blur(10px);
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.badge-pending { background: #FFC107; color: #000; }
+.badge-completed { background: #4CAF50; color: white; }
+.badge-winner { background: #FF9800; color: white; }
+.badge-active { background: #2196F3; color: white; }
