@@ -13,38 +13,41 @@ function App() {
 
   const initApp = async () => {
     try {
-      let tgUser = null
-      
+      let tgUser = null;
+
+      // Check if we are inside Telegram Mini App
       if (window.Telegram && window.Telegram.WebApp) {
-        const tg = window.Telegram.WebApp
-        tg.ready()
-        tg.expand()
-        
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
         if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-          tgUser = tg.initDataUnsafe.user
+          tgUser = tg.initDataUnsafe.user;
+        } else {
+          alert('Telegram opened but no user data. Did you set /setdomain in BotFather?');
+          setLoading(false);
+          return;
         }
+      } else {
+        alert('Not inside Telegram Mini App. Open via the bot menu button.');
+        setLoading(false);
+        return;
       }
 
-      if (!tgUser) {
-        console.log('Not in Telegram')
-        setLoading(false)
-        return
-      }
-
-      console.log('Telegram User:', tgUser.id, tgUser.first_name)
-
-      let { data: dbUser, error: fetchError } = await supabase
+      // Now connect to Supabase
+      const { data: dbUser, error: fetchError } = await supabase
         .from('users')
         .select('*')
         .eq('telegram_id', tgUser.id)
-        .maybeSingle()
+        .maybeSingle();
 
       if (fetchError) {
-        console.error('Fetch error:', fetchError)
-        throw fetchError
+        alert('Supabase fetch error: ' + fetchError.message);
+        throw fetchError;
       }
 
       if (!dbUser) {
+        // Create new user
         const { data: newUser, error: createError } = await supabase
           .from('users')
           .insert({
@@ -52,30 +55,34 @@ function App() {
             first_name: tgUser.first_name,
             last_name: tgUser.last_name || '',
             username: tgUser.username || '',
-            is_admin: tgUser.id === 6657645905
+            is_admin: tgUser.id === 6657645905,
           })
           .select()
-          .single()
-        
+          .single();
+
         if (createError) {
-          console.error('Create error:', createError)
-          throw createError
+          alert('Supabase insert error: ' + createError.message);
+          throw createError;
         }
-        dbUser = newUser
+        dbUser = newUser;
       } else {
+        // Ensure admin flag is correct for ID 6657645905
         if (dbUser.telegram_id === 6657645905 && !dbUser.is_admin) {
-          await supabase.from('users').update({ is_admin: true }).eq('telegram_id', 6657645905)
-          dbUser.is_admin = true
+          await supabase
+            .from('users')
+            .update({ is_admin: true })
+            .eq('telegram_id', 6657645905);
+          dbUser.is_admin = true;
         }
       }
 
-      setUser(dbUser)
+      setUser(dbUser);
     } catch (error) {
-      console.error('Init error:', error)
+      alert('Unexpected error: ' + (error.message || JSON.stringify(error)));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   if (loading) {
     return (
