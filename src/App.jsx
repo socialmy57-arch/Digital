@@ -26,12 +26,12 @@ function App() {
       }
 
       if (!tgUser) {
-        tgUser = {
-          id: 6657645905,
-          first_name: 'Admin',
-          username: 'admin'
-        }
+        console.log('Not in Telegram')
+        setLoading(false)
+        return
       }
+
+      console.log('Telegram User:', tgUser.id, tgUser.first_name)
 
       let { data: dbUser, error: fetchError } = await supabase
         .from('users')
@@ -50,6 +50,7 @@ function App() {
           .insert({
             telegram_id: tgUser.id,
             first_name: tgUser.first_name,
+            last_name: tgUser.last_name || '',
             username: tgUser.username || '',
             is_admin: tgUser.id === 6657645905
           })
@@ -61,17 +62,16 @@ function App() {
           throw createError
         }
         dbUser = newUser
+      } else {
+        if (dbUser.telegram_id === 6657645905 && !dbUser.is_admin) {
+          await supabase.from('users').update({ is_admin: true }).eq('telegram_id', 6657645905)
+          dbUser.is_admin = true
+        }
       }
 
       setUser(dbUser)
     } catch (error) {
       console.error('Init error:', error)
-      setUser({
-        id: 'local',
-        telegram_id: 6657645905,
-        first_name: 'Admin',
-        is_admin: true
-      })
     } finally {
       setLoading(false)
     }
@@ -89,18 +89,22 @@ function App() {
     return (
       <div style={{ textAlign: 'center', marginTop: '50%', color: 'white', padding: '20px' }}>
         <h2>🎲 Barsanaol Lottery</h2>
-        <p>Connecting...</p>
-        <button onClick={() => window.location.reload()} style={{
-          background: '#4CAF50', color: 'white', padding: '12px 30px',
-          borderRadius: '8px', marginTop: '20px', fontSize: '16px'
-        }}>
-          🔄 Retry
+        <p>Please open this app through Telegram.</p>
+        <p>Use Telegram mobile app and click the menu button.</p>
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            background: '#4CAF50', color: 'white', padding: '12px 30px',
+            borderRadius: '8px', marginTop: '20px', fontSize: '16px'
+          }}
+        >
+          🔄 Try Again
         </button>
       </div>
     )
   }
 
-  const isAdmin = user.telegram_id === 6657645905 || user.is_admin
+  const isAdmin = user.telegram_id === 6657645905 && user.is_admin
 
   return (
     <div className="app">
