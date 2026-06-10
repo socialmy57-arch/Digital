@@ -140,7 +140,9 @@ function HomePage({ user, isAdmin, onNavigate }) {
         setSoldNumbers((numbers || []).map(n => n.number))
       }
     } catch (error) { console.error('Load error:', error) }
-  }const handleNumberClick = (number) => {
+  }
+
+  const handleNumberClick = (number) => {
     if (soldNumbers.includes(number)) return
     setSelectedNumbers(prev => {
       if (prev.includes(number)) return prev.filter(n => n !== number)
@@ -216,7 +218,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
                     const isSold = soldNumbers.includes(num)
                     const isSelected = selectedNumbers.includes(num)
                     return (
-                      <button key={num} className={num-btn ${isSold ? 'sold' : ''} ${isSelected ? 'selected' : ''}}
+                      <button key={num} className={`num-btn ${isSold ? 'sold' : ''} ${isSelected ? 'selected' : ''}`}
                         onClick={() => handleNumberClick(num)} disabled={isSold}>{num}</button>
                     )
                   })}
@@ -225,7 +227,8 @@ function HomePage({ user, isAdmin, onNavigate }) {
               {selectedNumbers.length > 0 && (
                 <div className="card selected-numbers">
                   <p>Selected: {selectedNumbers.sort((a, b) => a - b).join(', ')}</p>
-                  <p>Total: {selectedNumbers.length * (activeRound?.ticket_price || 200)} ETB</p><button onClick={() => setShowPayment(true)} className="continue-btn">Continue to Payment →</button>
+                  <p>Total: {selectedNumbers.length * (activeRound?.ticket_price || 200)} ETB</p>
+                  <button onClick={() => setShowPayment(true)} className="continue-btn">Continue to Payment →</button>
                 </div>
               )}
             </>
@@ -300,9 +303,10 @@ function Dashboard({ user, onBack }) {
         {myNumbers.length > 0 ? myNumbers.slice(0, 20).map(n => (
           <div key={n.id} className="number-item">
             <span>Round #{n.lottery_rounds?.round_number} - Number {n.number}</span>
-            <span className={badge badge-${n.status}}>{n.status}</span>
+            <span className={`badge badge-${n.status}`}>{n.status}</span>
           </div>
-        )) : <p>No numbers purchased yet</p>}</div>
+        )) : <p>No numbers purchased yet</p>}
+      </div>
       <div className="card">
         <h3>💳 Transactions</h3>
         {transactions.length > 0 ? transactions.map(tx => (
@@ -312,7 +316,7 @@ function Dashboard({ user, onBack }) {
               <p>{tx.total_amount} ETB | Ref: {tx.payment_reference}</p>
               <small>{new Date(tx.created_at).toLocaleDateString()}</small>
             </div>
-            <span className={badge badge-${tx.status}}>{tx.status}</span>
+            <span className={`badge badge-${tx.status}`}>{tx.status}</span>
           </div>
         )) : <p>No transactions yet</p>}
       </div>
@@ -353,7 +357,7 @@ function AdminPanel({ user, onBack }) {
         supabase.from('sms_logs').select('*', { count: 'exact', head: true }),
         supabase.from('winners').select('*', { count: 'exact', head: true }).eq('announced', true)
       ])
-      setStats({ users: u.count  0, activeRounds: r.count  0, transactions: t.count  0, sms: s.count  0, winners: w.count || 0 })
+      setStats({ users: u.count || 0, activeRounds: r.count || 0, transactions: t.count || 0, sms: s.count || 0, winners: w.count || 0 })
     }
   }
 
@@ -375,7 +379,7 @@ function AdminPanel({ user, onBack }) {
       round_id: roundId, number: randomPick.number,
       user_id: randomPick.user_id, prize: prize || 'Prize', announced: false
     })
-    alert(Winner drawn: Number ${randomPick.number}!); setPrize(''); loadTabData()
+    alert(`Winner drawn: Number ${randomPick.number}!`); setPrize(''); loadTabData()
   }
 
   const announceWinner = async (winnerId) => {
@@ -387,7 +391,9 @@ function AdminPanel({ user, onBack }) {
     await supabase.from('transactions').update({ status: 'completed' }).eq('id', transactionId)
     await supabase.from('selected_numbers').update({ status: 'paid' }).eq('transaction_id', transactionId)
     loadTabData(); alert('Payment verified!')
-  }const exportCSV = (type) => {
+  }
+
+  const exportCSV = (type) => {
     let data = type === 'transactions' ? transactions : winners
     if (!data || data.length === 0) { alert('No data'); return }
     const csv = Object.keys(data[0]).join(',') + '\n' + data.map(row => Object.values(row).join(',')).join('\n')
@@ -395,7 +401,7 @@ function AdminPanel({ user, onBack }) {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = ${type}.csv
+    a.download = `${type}.csv`
     a.click()
   }
 
@@ -409,7 +415,7 @@ function AdminPanel({ user, onBack }) {
       <div className="header"><button onClick={onBack} className="back-btn">← Back</button><h1>Admin Panel</h1></div>
       <div className="admin-tabs">
         {tabs.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={tab-btn ${activeTab === tab.key ? 'active' : ''}}>{tab.label}</button>
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}>{tab.label}</button>
         ))}
       </div>
       {activeTab === 'rounds' && (
@@ -433,7 +439,7 @@ function AdminPanel({ user, onBack }) {
             <div key={w.id} className="card">
               <p>Round #{w.lottery_rounds?.round_number} | Number: <strong>{w.number}</strong></p>
               <p>User: {w.users?.first_name} | Prize: {w.prize}</p>
-              <span className={badge ${w.announced ? 'badge-completed' : 'badge-pending'}}>{w.announced ? 'Announced' : 'Pending'}</span>
+              <span className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}>{w.announced ? 'Announced' : 'Pending'}</span>
               {!w.announced && <button onClick={() => announceWinner(w.id)} className="btn-orange">📢 Announce</button>}
             </div>
           ))}
@@ -446,7 +452,7 @@ function AdminPanel({ user, onBack }) {
             <div key={tx.id} className="card">
               <p>User: {tx.users?.first_name || 'Unknown'} | Amount: {tx.total_amount} ETB</p>
               <p>Numbers: {tx.numbers_selected?.join(', ')} | Ref: {tx.payment_reference}</p>
-              <span className={badge badge-${tx.status}}>{tx.status}</span>
+              <span className={`badge badge-${tx.status}`}>{tx.status}</span>
               {tx.status === 'pending' && <button onClick={() => verifyPayment(tx.id)} className="btn-blue">✅ Verify</button>}
             </div>
           ))}
@@ -459,7 +465,8 @@ function AdminPanel({ user, onBack }) {
               <p><strong>From:</strong> {sms.sender}</p>
               <p className="sms-content">{sms.content}</p>
               {sms.transaction_id && <p>TX: {sms.transaction_id}</p>}
-              {sms.amount && <p>Amount: {sms.amount} ETB</p>}<small>{new Date(sms.received_at).toLocaleString()}</small>
+              {sms.amount && <p>Amount: {sms.amount} ETB</p>}
+              <small>{new Date(sms.received_at).toLocaleString()}</small>
             </div>
           ))}
         </div>
