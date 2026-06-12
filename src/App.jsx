@@ -56,10 +56,7 @@ function App() {
         dbUser = newUser
       } else {
         if (dbUser.telegram_id === 6657645905 && !dbUser.is_admin) {
-          await supabase
-            .from('users')
-            .update({ is_admin: true })
-            .eq('telegram_id', 6657645905)
+          await supabase.from('users').update({ is_admin: true }).eq('telegram_id', 6657645905)
           dbUser.is_admin = true
         }
       }
@@ -140,9 +137,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
-
-      if (round) {
+        .single()if (round) {
         setActiveRound(round)
         const { data: numbers } = await supabase
           .from('selected_numbers')
@@ -171,7 +166,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
       return
     }
 
-    const totalAmount = selectedNumbers.length * (activeRound?.ticket_price || 200)
+    const totalAmount = selectedNumbers.length * (activeRound?.ticket_price || 300)
 
     try {
       const { data: transaction } = await supabase
@@ -248,6 +243,14 @@ function HomePage({ user, isAdmin, onNavigate }) {
             <p>📊 {soldNumbers.length}/100 numbers sold</p>
           </div>
 
+          {/* 🏆 Public Prize Display */}
+          <div className="card" style={{ background: 'rgba(255,215,0,0.2)', textAlign: 'center' }}>
+            <h3>🏆 Prizes</h3>
+            <p>🥇 1st Prize: <strong>20,000 ETB</strong></p>
+            <p>🥈 2nd Prize: <strong>5,000 ETB</strong></p>
+            <p>🥉 3rd Prize: <strong>2,000 ETB</strong></p>
+          </div>
+
           {!showPayment ? (
             <>
               <div className="numbers-section">
@@ -255,8 +258,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
                 <p className="selected-count">{selectedNumbers.length} selected</p>
                 <div className="number-legend">
                   <span>
-                    <span className="dot available"></span> Available
-                  </span>
+                    <span className="dot available"></span> Available</span>
                   <span>
                     <span className="dot selected"></span> Selected
                   </span>
@@ -271,7 +273,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
                     return (
                       <button
                         key={num}
-                        className={`num-btn ${isSold ? 'sold' : ''} ${isSelected ? 'selected' : ''}`}
+                        className={num-btn ${isSold ? 'sold' : ''} ${isSelected ? 'selected' : ''}}
                         onClick={() => handleNumberClick(num)}
                         disabled={isSold}
                       >
@@ -285,7 +287,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
               {selectedNumbers.length > 0 && (
                 <div className="card selected-numbers">
                   <p>Selected: {selectedNumbers.sort((a, b) => a - b).join(', ')}</p>
-                  <p>Total: {selectedNumbers.length * (activeRound?.ticket_price || 200)} ETB</p>
+                  <p>Total: {selectedNumbers.length * (activeRound?.ticket_price || 300)} ETB</p>
                   <button onClick={() => setShowPayment(true)} className="continue-btn">
                     Continue to Payment →
                   </button>
@@ -298,7 +300,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
               <div className="payment-summary">
                 <p>Numbers: {selectedNumbers.sort((a, b) => a - b).join(', ')}</p>
                 <p>
-                  Total: <strong>{selectedNumbers.length * (activeRound?.ticket_price || 200)} ETB</strong>
+                  Total: <strong>{selectedNumbers.length * (activeRound?.ticket_price || 300)} ETB</strong>
                 </p>
               </div>
               <div className="bank-details">
@@ -355,12 +357,11 @@ function HomePage({ user, isAdmin, onNavigate }) {
 function Dashboard({ user, onBack }) {
   const [transactions, setTransactions] = useState([])
   const [myNumbers, setMyNumbers] = useState([])
+  const [myWins, setMyWins] = useState([])
 
   useEffect(() => {
     loadDashboard()
-  }, [])
-
-  const loadDashboard = async () => {
+  }, [])const loadDashboard = async () => {
     const { data: tx } = await supabase
       .from('transactions')
       .select('*')
@@ -374,6 +375,14 @@ function Dashboard({ user, onBack }) {
       .eq('user_id', user.id)
       .order('selected_at', { ascending: false })
     setMyNumbers(nums || [])
+
+    const { data: wins } = await supabase
+      .from('winners')
+      .select('*, lottery_rounds(*)')
+      .eq('user_id', user.id)
+      .eq('announced', true)
+      .order('announced_at', { ascending: false })
+    setMyWins(wins || [])
   }
 
   const stats = {
@@ -390,6 +399,17 @@ function Dashboard({ user, onBack }) {
         </button>
         <h1>My Dashboard</h1>
       </div>
+
+      {myWins.length > 0 && (
+        <div className="card" style={{ background: 'rgba(255,152,0,0.3)' }}>
+          <h3>🏆 My Winnings</h3>
+          {myWins.map((w) => (
+            <div key={w.id} style={{ marginBottom: '8px' }}>
+              <strong>{w.prize}</strong> – Round #{w.lottery_rounds?.round_number}, Number {w.number}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card">
         <h3>📊 My Statistics</h3>
@@ -417,7 +437,7 @@ function Dashboard({ user, onBack }) {
               <span>
                 Round #{n.lottery_rounds?.round_number} - Number {n.number}
               </span>
-              <span className={`badge badge-${n.status}`}>{n.status}</span>
+              <span className={badge badge-${n.status}}>{n.status}</span>
             </div>
           ))
         ) : (
@@ -437,7 +457,7 @@ function Dashboard({ user, onBack }) {
                 </p>
                 <small>{new Date(tx.created_at).toLocaleDateString()}</small>
               </div>
-              <span className={`badge badge-${tx.status}`}>{tx.status}</span>
+              <span className={badge badge-${tx.status}}>{tx.status}</span>
             </div>
           ))
         ) : (
@@ -452,7 +472,9 @@ function AdminPanel({ user, onBack }) {
   const [activeTab, setActiveTab] = useState('rounds')
   const [roundNumber, setRoundNumber] = useState(1)
   const [endDate, setEndDate] = useState('')
-  const [prize, setPrize] = useState('')
+  const [prize1, setPrize1] = useState('20000')
+  const [prize2, setPrize2] = useState('5000')
+  const [prize3, setPrize3] = useState('2000')
   const [transactions, setTransactions] = useState([])
   const [smsLogs, setSmsLogs] = useState([])
   const [winners, setWinners] = useState([])
@@ -460,9 +482,7 @@ function AdminPanel({ user, onBack }) {
 
   useEffect(() => {
     loadTabData()
-  }, [activeTab])
-
-  const loadTabData = async () => {
+  }, [activeTab])const loadTabData = async () => {
     if (activeTab === 'transactions') {
       const { data } = await supabase
         .from('transactions')
@@ -519,7 +539,7 @@ function AdminPanel({ user, onBack }) {
       start_date: new Date().toISOString(),
       end_date: new Date(endDate).toISOString(),
       status: 'active',
-      ticket_price: 200,
+      ticket_price: 300,
       created_by: user.telegram_id,
     })
     alert('Round created!')
@@ -527,26 +547,60 @@ function AdminPanel({ user, onBack }) {
     setEndDate('')
   }
 
-  const drawWinner = async (roundId) => {
+  const drawWinners = async (roundId) => {
     const { data: numbers } = await supabase
       .from('selected_numbers')
       .select('*')
       .eq('round_id', roundId)
       .in('status', ['paid', 'confirmed'])
-    if (!numbers || numbers.length === 0) {
-      alert('No paid numbers!')
+
+    if (!numbers || numbers.length < 3) {
+      alert('Need at least 3 paid numbers to draw 3 winners.')
       return
     }
-    const randomPick = numbers[Math.floor(Math.random() * numbers.length)]
-    await supabase.from('winners').insert({
+
+    const { data: existingWinners } = await supabase
+      .from('winners')
+      .select('number')
+      .eq('round_id', roundId)
+
+    const alreadyWonNumbers = (existingWinners || []).map((w) => w.number)
+    const available = numbers.filter((n) => !alreadyWonNumbers.includes(n.number))
+
+    if (available.length < 3) {
+      alert('Not enough unique numbers for 3 winners (some already drawn).')
+      return
+    }
+
+    const shuffled = available.sort(() => Math.random() - 0.5)
+    const winners = shuffled.slice(0, 3)
+
+    const prizes = [
+      { rank: 1, amount: prize1 || '20000' },
+      { rank: 2, amount: prize2 || '5000' },
+      { rank: 3, amount: prize3 || '2000' },
+    ]
+
+    const inserts = winners.map((entry, index) => ({
       round_id: roundId,
-      number: randomPick.number,
-      user_id: randomPick.user_id,
-      prize: prize || 'Prize',
+      number: entry.number,
+      user_id: entry.user_id,
+      prize: ${prizes[index].rank}${index === 0 ? 'st' : index === 1 ? 'nd' : 'rd'} Prize - ${prizes[index].amount} ETB,
       announced: false,
-    })
-    alert(`Winner drawn: Number ${randomPick.number}!`)
-    setPrize('')
+    }))
+
+    const { error } = await supabase.from('winners').insert(inserts)
+    if (error) {
+      alert('Error drawing winners: ' + error.message)
+      return
+    }
+
+    alert(
+      Winners drawn:\n1st: Number ${winners[0].number}\n2nd: Number ${winners[1].number}\n3rd: Number ${winners[2].number}
+    )
+    setPrize1('20000')
+    setPrize2('5000')
+    setPrize3('2000')
     loadTabData()
   }
 
@@ -557,9 +611,7 @@ function AdminPanel({ user, onBack }) {
       .eq('id', winnerId)
     alert('Winner announced!')
     loadTabData()
-  }
-
-  const verifyPayment = async (transactionId) => {
+  }const verifyPayment = async (transactionId) => {
     await supabase.from('transactions').update({ status: 'completed' }).eq('id', transactionId)
     await supabase
       .from('selected_numbers')
@@ -583,7 +635,7 @@ function AdminPanel({ user, onBack }) {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${type}.csv`
+    a.download = ${type}.csv
     a.click()
   }
 
@@ -609,7 +661,7 @@ function AdminPanel({ user, onBack }) {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
+            className={tab-btn ${activeTab === tab.key ? 'active' : ''}}
           >
             {tab.label}
           </button>
@@ -642,30 +694,51 @@ function AdminPanel({ user, onBack }) {
           </div>
 
           <div className="card">
-            <h3>Draw Winner</h3>
+            <h3>Draw Winners (1st, 2nd, 3rd)</h3>
             <div>
-              <label>Prize</label>
+              <label>1st Prize (ETB)</label>
               <input
-                type="text"
-                value={prize}
-                onChange={(e) => setPrize(e.target.value)}
-                placeholder="e.g., 10,000 ETB"
+                type="number"
+                value={prize1}
+                onChange={(e) => setPrize1(e.target.value)}
+                placeholder="20000"
               />
             </div>
+            <div>
+              <label>2nd Prize (ETB)</label>
+              <input
+                type="number"
+                value={prize2}
+                onChange={(e) => setPrize2(e.target.value)}
+                placeholder="5000"
+              />
+            </div>
+            <div>
+              <label>3rd Prize (ETB)</label>
+              <input
+                type="number"
+                value={prize3}
+                onChange={(e) => setPrize3(e.target.value)}
+                placeholder="2000"
+              />
+            </div>
+
             <button
               onClick={() => {
-                const id = prompt('Enter Round ID:')
-                if (id) drawWinner(id)
+                const id = prompt('Enter Round ID to draw winners:')
+                if (id) drawWinners(id)
               }}
               className="btn-orange"
+              style={{ marginTop: '15px' }}
             >
-              🎲 Draw Winner
+              🎲 Draw All Three Winners
             </button>
+            <p style={{ fontSize: '12px', opacity: 0.8, marginTop: '8px' }}>
+              This will randomly pick three unique numbers for 1st, 2nd, and 3rd prize.
+            </p>
           </div>
         </div>
-      )}
-
-      {activeTab === 'winners' && (
+      )}{activeTab === 'winners' && (
         <div>
           <h3>Winners</h3>
           {winners.map((w) => (
@@ -678,7 +751,7 @@ function AdminPanel({ user, onBack }) {
                 User: {w.users?.first_name} | Prize: {w.prize}
               </p>
               <span
-                className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}
+                className={badge ${w.announced ? 'badge-completed' : 'badge-pending'}}
               >
                 {w.announced ? 'Announced' : 'Pending'}
               </span>
@@ -710,7 +783,7 @@ function AdminPanel({ user, onBack }) {
                 Numbers: {tx.numbers_selected?.join(', ')} | Ref:{' '}
                 {tx.payment_reference}
               </p>
-              <span className={`badge badge-${tx.status}`}>{tx.status}</span>
+              <span className={badge badge-${tx.status}}>{tx.status}</span>
               {tx.status === 'pending' && (
                 <button
                   onClick={() => verifyPayment(tx.id)}
