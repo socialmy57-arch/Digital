@@ -6,7 +6,7 @@ const supabase = createClient(
 )
 
 exports.handler = async (event) => {
-  // Security: only allow requests with the correct API key
+  // Security check
   if (event.headers['x-api-key'] !== process.env.SMS_WEBHOOK_API_KEY) {
     return {
       statusCode: 401,
@@ -25,72 +25,91 @@ exports.handler = async (event) => {
     const body = JSON.parse(event.body || '{}')
     const { sender, content, timestamp } = body
 
-    // Extract transaction reference (multiple patterns)
     const transMatch = content.match(/(?:Ref|TXN|FT)[:\s]*([A-Z0-9]+)/i)
     const amountMatch = content.match(/(?:ETB|Br)\s*(\d+(?:\.\d{2})?)/i)
-
     const transactionId = transMatch ? transMatch[1] : null
     const amount = amountMatch ? parseFloat(amountMatch[1]) : null
 
-    // Save SMS to logs
-    const { data: smsLog, error: insertError } = await supabase
-      .from('sms_logs')
-      .insert({
-        sender,
-        content,
-        transaction_id: transactionId,
-        amount,
-        sms_date: timestamp || new Date().toISOString(),
-        raw_json: { sender, content, timestamp }
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      // Duplicate transaction ID → ignore
-      if (insertError.code === '23505') {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: 'Duplicate SMS ignored' })
-        }
-      }
-      throw insertError
-    }
-
-    // Auto-link to pending transaction
-    if (transactionId) {
-      const { data: transaction } = await supabase
-        .from('transactions')
-        .select('id')
-        .eq('payment_reference', transactionId)
-        .eq('status', 'pending')
+    // Try inserting SMS
+    let smsLog
+    try {
+      const { data, error: insertError } = await supabase
+        .from('sms_logs')
+        .insert({
+          sender,
+          content,
+          transaction_id: transactionId,
+          amount,
+          sms_date: timestamp || new Date().toISOString(),
+          raw_json: { sender, content, timestamp }
+        })
+        .select()
         .single()
 
-      if (transaction) {
-        // Mark transaction as completed
-        await supabase
+      if (insertError) {
+        if (insertError.code === '23505') {
+          return { statusCode: 200, body: JSON.stringify({ message: 'Duplicate SMS ignored' }) }
+        }
+        throw insertError
+      }
+      smsLog = data
+    } catch (err) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          step: 'insert_sms_log',
+          error: err.message,
+          code: err.code,
+          details: err.details,
+          hint: err.hint
+        })
+      }
+    }
+
+    // Auto-link transaction
+    if (transactionId) {
+      try {
+        const { data: transaction } = await supabase
           .from('transactions')
-          .update({
-            status: 'completed',
-            sms_log_id: smsLog.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', transaction.id)
+          .select('id')
+          .eq('payment_reference', transactionId)
+          .eq('status', 'pending')
+          .single()
 
-        // Mark numbers as paid
-        await supabase
-          .from('selected_numbers')
-          .update({ status: 'paid' })
-          .eq('transaction_id', transaction.id)
+        if (transaction) {
+          await supabase
+            .from('transactions')
+            .update({
+              status: 'completed',
+              sms_log_id: smsLog.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', transaction.id)
 
-        // Mark SMS as processed
-        await supabase
-          .from('sms_logs')
-          .update({
-            processed: true,
-            linked_transaction_id: transaction.id
+          await supabase
+            .from('selected_numbers')
+            .update({ status: 'paid' })
+            .eq('transaction_id', transaction.id)
+
+          await supabase
+            .from('sms_logs')
+            .update({
+              processed: true,
+              linked_transaction_id: transaction.id
+            })
+            .eq('id', smsLog.id)
+        }
+      } catch (err) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            step: 'auto_link',
+            error: err.message,
+            code: err.code,
+            details: err.details,
+            hint: err.hint
           })
-          .eq('id', smsLog.id)
+        }
       }
     }
 
@@ -105,10 +124,13 @@ exports.handler = async (event) => {
       })
     }
   } catch (error) {
-    console.error('SMS Webhook Error:', error)
     return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message })
+      statusCode: 200,
+      body: JSON.stringify({
+        step: 'general',
+        error: error.message,
+        stack: error.stack
+      })
     }
   }
 }
