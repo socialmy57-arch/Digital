@@ -38,17 +38,19 @@ function App() {
         }
       )
 
+      const responseText = await response.text()
+
       if (!response.ok) {
-        const errText = await response.text()
-        alert('Auth failed: ' + response.status + ' ' + errText)
+        alert('Auth failed: ' + response.status + '\n\nFull response:\n' + responseText)
         setLoading(false)
         return
       }
 
-      const { token, user } = await response.json()
+      const data = JSON.parse(responseText)
+      const { token, user } = data
 
       if (!user) {
-        alert('No user in auth response')
+        alert('No user in response:\n' + responseText)
         setLoading(false)
         return
       }
@@ -329,7 +331,8 @@ function HomePage({ user, isAdmin, onNavigate }) {
         <div className="card success-section">
           <h2>✅ Reservation Submitted!</h2>
           <p>Numbers reserved pending verification.</p>
-          <p><strong>Reference:</strong> {transactionRef}</p>
+          <p><strong>Reference:</strong> {transactionRef}
+          </p>
           <button onClick={resetForm} className="new-btn">
             Buy More Numbers
           </button>
