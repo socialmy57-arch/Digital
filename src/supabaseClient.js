@@ -4,3 +4,8 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// Function to set the JWT for authenticated requests
+export const setSupabaseAuth = (token) => {
+  supabase.auth.setAuth(token)
+}
