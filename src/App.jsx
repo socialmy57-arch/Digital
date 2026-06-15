@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { supabase } from './supabaseClient'
+import { supabase, setSupabaseAuth } from './supabaseClient'
 import './App.css'
 
 function App() {
@@ -13,57 +13,45 @@ function App() {
 
   const initApp = async () => {
     try {
-      let tgUser = null
-
-      if (window.Telegram && window.Telegram.WebApp) {
-        const tg = window.Telegram.WebApp
-        tg.ready()
-        tg.expand()
-
-        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-          tgUser = tg.initDataUnsafe.user
-        } else {
-          setLoading(false)
-          return
-        }
-      } else {
+      // Check if we are inside Telegram Mini App
+      if (!window.Telegram || !window.Telegram.WebApp) {
         setLoading(false)
         return
       }
 
-      let { data: dbUser, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('telegram_id', tgUser.id)
-        .maybeSingle()
+      const tg = window.Telegram.WebApp
+      tg.ready()
+      tg.expand()
 
-      if (fetchError) throw fetchError
-
-      if (!dbUser) {
-        const { data: newUser, error: createError } = await supabase
-          .from('users')
-          .insert({
-            telegram_id: tgUser.id,
-            first_name: tgUser.first_name,
-            last_name: tgUser.last_name || '',
-            username: tgUser.username || '',
-            is_admin: tgUser.id === 6657645905,
-          })
-          .select()
-          .single()
-
-        if (createError) throw createError
-        dbUser = newUser
-      } else {
-        if (dbUser.telegram_id === 6657645905 && !dbUser.is_admin) {
-          await supabase.from('users').update({ is_admin: true }).eq('telegram_id', 6657645905)
-          dbUser.is_admin = true
-        }
+      // Get initData for validation
+      const initData = tg.initData
+      if (!initData) {
+        setLoading(false)
+        return
       }
 
-      setUser(dbUser)
+      // Call our secure backend to validate and get user data + token
+      const response = await fetch(
+        '/.netlify/functions/telegram-auth',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData })
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Auth failed')
+      }
+
+      const { token, user } = await response.json()
+
+      // Set the JWT so all future Supabase requests use it
+      setSupabaseAuth(token)
+
+      setUser(user)
     } catch (error) {
-      console.error('Init error:', error)
+      console.error('Auth error:', error)
     } finally {
       setLoading(false)
     }
@@ -117,6 +105,7 @@ function App() {
   )
 }
 
+// ========== HOMEPAGE ==========
 function HomePage({ user, isAdmin, onNavigate }) {
   const [activeRound, setActiveRound] = useState(null)
   const [selectedNumbers, setSelectedNumbers] = useState([])
@@ -137,21 +126,21 @@ function HomePage({ user, isAdmin, onNavigate }) {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .single()
 
       if (round) {
-        setActiveRound(round);
+        setActiveRound(round)
         const { data: numbers } = await supabase
           .from('selected_numbers')
           .select('number')
           .eq('round_id', round.id)
-          .in('status', ['reserved', 'paid', 'confirmed']);
-        setSoldNumbers((numbers || []).map((n) => n.number));
+          .in('status', ['reserved', 'paid', 'confirmed'])
+        setSoldNumbers((numbers || []).map((n) => n.number))
       }
     } catch (error) {
-      console.error('Load error:', error);
+      console.error('Load error:', error)
     }
-  };
+  }
 
   const handleNumberClick = (number) => {
     if (soldNumbers.includes(number)) return
@@ -245,7 +234,6 @@ function HomePage({ user, isAdmin, onNavigate }) {
             <p>📊 {soldNumbers.length}/100 numbers sold</p>
           </div>
 
-          {/* 🏆 Public Prize Display */}
           <div className="card" style={{ background: 'rgba(255,215,0,0.2)', textAlign: 'center' }}>
             <h3>🏆 Prizes</h3>
             <p>🥇 1st Prize: <strong>20,000 ETB</strong></p>
@@ -259,15 +247,9 @@ function HomePage({ user, isAdmin, onNavigate }) {
                 <h3>Select Numbers (Max 10)</h3>
                 <p className="selected-count">{selectedNumbers.length} selected</p>
                 <div className="number-legend">
-                  <span>
-                    <span className="dot available"></span> Available
-                  </span>
-                  <span>
-                    <span className="dot selected"></span> Selected
-                  </span>
-                  <span>
-                    <span className="dot sold"></span> Sold
-                  </span>
+                  <span><span className="dot available"></span> Available</span>
+                  <span><span className="dot selected"></span> Selected</span>
+                  <span><span className="dot sold"></span> Sold</span>
                 </div>
                 <div className="numbers-grid">
                   {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => {
@@ -302,9 +284,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
               <h3>Payment Information</h3>
               <div className="payment-summary">
                 <p>Numbers: {selectedNumbers.sort((a, b) => a - b).join(', ')}</p>
-                <p>
-                  Total: <strong>{selectedNumbers.length * (activeRound?.ticket_price || 300)} ETB</strong>
-                </p>
+                <p>Total: <strong>{selectedNumbers.length * (activeRound?.ticket_price || 300)} ETB</strong></p>
               </div>
               <div className="bank-details">
                 <h4>Pay to any account:</h4>
@@ -345,9 +325,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
         <div className="card success-section">
           <h2>✅ Reservation Submitted!</h2>
           <p>Numbers reserved pending verification.</p>
-          <p>
-            <strong>Reference:</strong> {transactionRef}
-          </p>
+          <p><strong>Reference:</strong> {transactionRef}</p>
           <button onClick={resetForm} className="new-btn">
             Buy More Numbers
           </button>
@@ -357,6 +335,7 @@ function HomePage({ user, isAdmin, onNavigate }) {
   )
 }
 
+// ========== DASHBOARD ==========
 function Dashboard({ user, onBack }) {
   const [transactions, setTransactions] = useState([])
   const [myNumbers, setMyNumbers] = useState([])
@@ -399,9 +378,7 @@ function Dashboard({ user, onBack }) {
   return (
     <div>
       <div className="header">
-        <button onClick={onBack} className="back-btn">
-          ← Back
-        </button>
+        <button onClick={onBack} className="back-btn">← Back</button>
         <h1>My Dashboard</h1>
       </div>
 
@@ -419,18 +396,9 @@ function Dashboard({ user, onBack }) {
       <div className="card">
         <h3>📊 My Statistics</h3>
         <div className="stats-grid">
-          <div className="stat-box">
-            <div className="stat-number">{stats.purchases}</div>
-            <div className="stat-label">Purchases</div>
-          </div>
-          <div className="stat-box">
-            <div className="stat-number">{stats.numbers}</div>
-            <div className="stat-label">Numbers</div>
-          </div>
-          <div className="stat-box">
-            <div className="stat-number">{stats.totalSpent}</div>
-            <div className="stat-label">Total ETB</div>
-          </div>
+          <div className="stat-box"><div className="stat-number">{stats.purchases}</div><div className="stat-label">Purchases</div></div>
+          <div className="stat-box"><div className="stat-number">{stats.numbers}</div><div className="stat-label">Numbers</div></div>
+          <div className="stat-box"><div className="stat-number">{stats.totalSpent}</div><div className="stat-label">Total ETB</div></div>
         </div>
       </div>
 
@@ -439,9 +407,7 @@ function Dashboard({ user, onBack }) {
         {myNumbers.length > 0 ? (
           myNumbers.slice(0, 20).map((n) => (
             <div key={n.id} className="number-item">
-              <span>
-                Round #{n.lottery_rounds?.round_number} - Number {n.number}
-              </span>
+              <span>Round #{n.lottery_rounds?.round_number} - Number {n.number}</span>
               <span className={`badge badge-${n.status}`}>{n.status}</span>
             </div>
           ))
@@ -457,9 +423,7 @@ function Dashboard({ user, onBack }) {
             <div key={tx.id} className="transaction-item">
               <div>
                 <p>Numbers: {tx.numbers_selected?.join(', ')}</p>
-                <p>
-                  {tx.total_amount} ETB | Ref: {tx.payment_reference}
-                </p>
+                <p>{tx.total_amount} ETB | Ref: {tx.payment_reference}</p>
                 <small>{new Date(tx.created_at).toLocaleDateString()}</small>
               </div>
               <span className={`badge badge-${tx.status}`}>{tx.status}</span>
@@ -473,6 +437,7 @@ function Dashboard({ user, onBack }) {
   )
 }
 
+// ========== ADMIN PANEL ==========
 function AdminPanel({ user, onBack }) {
   const [activeTab, setActiveTab] = useState('rounds')
   const [roundNumber, setRoundNumber] = useState(1)
@@ -515,16 +480,10 @@ function AdminPanel({ user, onBack }) {
     if (activeTab === 'stats') {
       const [u, r, t, s, w] = await Promise.all([
         supabase.from('users').select('*', { count: 'exact', head: true }),
-        supabase
-          .from('lottery_rounds')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'active'),
+        supabase.from('lottery_rounds').select('*', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('transactions').select('*', { count: 'exact', head: true }),
         supabase.from('sms_logs').select('*', { count: 'exact', head: true }),
-        supabase
-          .from('winners')
-          .select('*', { count: 'exact', head: true })
-          .eq('announced', true),
+        supabase.from('winners').select('*', { count: 'exact', head: true }).eq('announced', true),
       ])
       setStats({
         users: u.count || 0,
@@ -537,10 +496,7 @@ function AdminPanel({ user, onBack }) {
   }
 
   const createRound = async () => {
-    if (!endDate) {
-      alert('Please select end date')
-      return
-    }
+    if (!endDate) { alert('Please select end date'); return }
     await supabase.from('lottery_rounds').insert({
       round_number: roundNumber,
       start_date: new Date().toISOString(),
@@ -602,9 +558,7 @@ function AdminPanel({ user, onBack }) {
       return
     }
 
-    alert(
-      `Winners drawn:\n1st: Number ${winners[0].number}\n2nd: Number ${winners[1].number}\n3rd: Number ${winners[2].number}`
-    )
+    alert(`Winners drawn:\n1st: Number ${winners[0].number}\n2nd: Number ${winners[1].number}\n3rd: Number ${winners[2].number}`)
     setPrize1('20000')
     setPrize2('5000')
     setPrize3('2000')
@@ -612,34 +566,22 @@ function AdminPanel({ user, onBack }) {
   }
 
   const announceWinner = async (winnerId) => {
-    await supabase
-      .from('winners')
-      .update({ announced: true, announced_at: new Date().toISOString() })
-      .eq('id', winnerId)
+    await supabase.from('winners').update({ announced: true, announced_at: new Date().toISOString() }).eq('id', winnerId)
     alert('Winner announced!')
     loadTabData()
   }
 
   const verifyPayment = async (transactionId) => {
     await supabase.from('transactions').update({ status: 'completed' }).eq('id', transactionId)
-    await supabase
-      .from('selected_numbers')
-      .update({ status: 'paid' })
-      .eq('transaction_id', transactionId)
+    await supabase.from('selected_numbers').update({ status: 'paid' }).eq('transaction_id', transactionId)
     loadTabData()
     alert('Payment verified!')
   }
 
   const exportCSV = (type) => {
     let data = type === 'transactions' ? transactions : winners
-    if (!data || data.length === 0) {
-      alert('No data')
-      return
-    }
-    const csv =
-      Object.keys(data[0]).join(',') +
-      '\n' +
-      data.map((row) => Object.values(row).join(',')).join('\n')
+    if (!data || data.length === 0) { alert('No data'); return }
+    const csv = Object.keys(data[0]).join(',') + '\n' + data.map((row) => Object.values(row).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -659,19 +601,13 @@ function AdminPanel({ user, onBack }) {
   return (
     <div>
       <div className="header">
-        <button onClick={onBack} className="back-btn">
-          ← Back
-        </button>
+        <button onClick={onBack} className="back-btn">← Back</button>
         <h1>Admin Panel</h1>
       </div>
 
       <div className="admin-tabs">
         {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
-          >
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}>
             {tab.label}
           </button>
         ))}
@@ -681,70 +617,18 @@ function AdminPanel({ user, onBack }) {
         <div>
           <div className="card">
             <h3>Create New Round</h3>
-            <div>
-              <label>Round Number</label>
-              <input
-                type="number"
-                value={roundNumber}
-                onChange={(e) => setRoundNumber(parseInt(e.target.value))}
-              />
-            </div>
-            <div>
-              <label>End Date</label>
-              <input
-                type="datetime-local"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <button onClick={createRound} className="btn-green">
-              Create Round
-            </button>
+            <div><label>Round Number</label><input type="number" value={roundNumber} onChange={(e) => setRoundNumber(parseInt(e.target.value))} /></div>
+            <div><label>End Date</label><input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+            <button onClick={createRound} className="btn-green">Create Round</button>
           </div>
-
           <div className="card">
             <h3>Draw Winners (1st, 2nd, 3rd)</h3>
-            <div>
-              <label>1st Prize (ETB)</label>
-              <input
-                type="number"
-                value={prize1}
-                onChange={(e) => setPrize1(e.target.value)}
-                placeholder="20000"
-              />
-            </div>
-            <div>
-              <label>2nd Prize (ETB)</label>
-              <input
-                type="number"
-                value={prize2}
-                onChange={(e) => setPrize2(e.target.value)}
-                placeholder="5000"
-              />
-            </div>
-            <div>
-              <label>3rd Prize (ETB)</label>
-              <input
-                type="number"
-                value={prize3}
-                onChange={(e) => setPrize3(e.target.value)}
-                placeholder="2000"
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                const id = prompt('Enter Round ID to draw winners:')
-                if (id) drawWinners(id)
-              }}
-              className="btn-orange"
-              style={{ marginTop: '15px' }}
-            >
+            <div><label>1st Prize (ETB)</label><input type="number" value={prize1} onChange={(e) => setPrize1(e.target.value)} placeholder="20000" /></div>
+            <div><label>2nd Prize (ETB)</label><input type="number" value={prize2} onChange={(e) => setPrize2(e.target.value)} placeholder="5000" /></div>
+            <div><label>3rd Prize (ETB)</label><input type="number" value={prize3} onChange={(e) => setPrize3(e.target.value)} placeholder="2000" /></div>
+            <button onClick={() => { const id = prompt('Enter Round ID to draw winners:'); if (id) drawWinners(id) }} className="btn-orange" style={{ marginTop: '15px' }}>
               🎲 Draw All Three Winners
             </button>
-            <p style={{ fontSize: '12px', opacity: 0.8, marginTop: '8px' }}>
-              This will randomly pick three unique numbers for 1st, 2nd, and 3rd prize.
-            </p>
           </div>
         </div>
       )}
@@ -754,23 +638,10 @@ function AdminPanel({ user, onBack }) {
           <h3>Winners</h3>
           {winners.map((w) => (
             <div key={w.id} className="card">
-              <p>
-                Round #{w.lottery_rounds?.round_number} | Number:{' '}
-                <strong>{w.number}</strong>
-              </p>
-              <p>
-                User: {w.users?.first_name} | Prize: {w.prize}
-              </p>
-              <span
-                className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}
-              >
-                {w.announced ? 'Announced' : 'Pending'}
-              </span>
-              {!w.announced && (
-                <button onClick={() => announceWinner(w.id)} className="btn-orange">
-                  📢 Announce
-                </button>
-              )}
+              <p>Round #{w.lottery_rounds?.round_number} | Number: <strong>{w.number}</strong></p>
+              <p>User: {w.users?.first_name} | Prize: {w.prize}</p>
+              <span className={`badge ${w.announced ? 'badge-completed' : 'badge-pending'}`}>{w.announced ? 'Announced' : 'Pending'}</span>
+              {!w.announced && <button onClick={() => announceWinner(w.id)} className="btn-orange">📢 Announce</button>}
             </div>
           ))}
         </div>
@@ -780,29 +651,14 @@ function AdminPanel({ user, onBack }) {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <h3>Transactions</h3>
-            <button onClick={() => exportCSV('transactions')} className="btn-small">
-              📥 Export
-            </button>
+            <button onClick={() => exportCSV('transactions')} className="btn-small">📥 Export</button>
           </div>
           {transactions.map((tx) => (
             <div key={tx.id} className="card">
-              <p>
-                User: {tx.users?.first_name || 'Unknown'} | Amount: {tx.total_amount}{' '}
-                ETB
-              </p>
-              <p>
-                Numbers: {tx.numbers_selected?.join(', ')} | Ref:{' '}
-                {tx.payment_reference}
-              </p>
+              <p>User: {tx.users?.first_name || 'Unknown'} | Amount: {tx.total_amount} ETB</p>
+              <p>Numbers: {tx.numbers_selected?.join(', ')} | Ref: {tx.payment_reference}</p>
               <span className={`badge badge-${tx.status}`}>{tx.status}</span>
-              {tx.status === 'pending' && (
-                <button
-                  onClick={() => verifyPayment(tx.id)}
-                  className="btn-blue"
-                >
-                  ✅ Verify
-                </button>
-              )}
+              {tx.status === 'pending' && <button onClick={() => verifyPayment(tx.id)} className="btn-blue">✅ Verify</button>}
             </div>
           ))}
         </div>
@@ -813,9 +669,7 @@ function AdminPanel({ user, onBack }) {
           <h3>SMS Logs</h3>
           {smsLogs.map((sms) => (
             <div key={sms.id} className="card">
-              <p>
-                <strong>From:</strong> {sms.sender}
-              </p>
+              <p><strong>From:</strong> {sms.sender}</p>
               <p className="sms-content">{sms.content}</p>
               {sms.transaction_id && <p>TX: {sms.transaction_id}</p>}
               {sms.amount && <p>Amount: {sms.amount} ETB</p>}
@@ -827,17 +681,8 @@ function AdminPanel({ user, onBack }) {
 
       {activeTab === 'stats' && (
         <div className="stats-grid">
-          {[
-            { label: 'Users', value: stats.users },
-            { label: 'Active Rounds', value: stats.activeRounds },
-            { label: 'Transactions', value: stats.transactions },
-            { label: 'SMS', value: stats.sms },
-            { label: 'Winners', value: stats.winners },
-          ].map((s) => (
-            <div key={s.label} className="card stat-card">
-              <h2>{s.value}</h2>
-              <p>{s.label}</p>
-            </div>
+          {[{ label: 'Users', value: stats.users }, { label: 'Active Rounds', value: stats.activeRounds }, { label: 'Transactions', value: stats.transactions }, { label: 'SMS', value: stats.sms }, { label: 'Winners', value: stats.winners }].map((s) => (
+            <div key={s.label} className="card stat-card"><h2>{s.value}</h2><p>{s.label}</p></div>
           ))}
         </div>
       )}
