@@ -13,7 +13,6 @@ function App() {
 
   const initApp = async () => {
     try {
-      // Check if we are inside Telegram Mini App
       if (!window.Telegram || !window.Telegram.WebApp) {
         setLoading(false)
         return
@@ -23,14 +22,13 @@ function App() {
       tg.ready()
       tg.expand()
 
-      // Get initData for validation
       const initData = tg.initData
       if (!initData) {
+        alert('No initData from Telegram')
         setLoading(false)
         return
       }
 
-      // Call our secure backend to validate and get user data + token
       const response = await fetch(
         '/.netlify/functions/telegram-auth',
         {
@@ -41,18 +39,24 @@ function App() {
       )
 
       if (!response.ok) {
-        throw new Error('Auth failed')
+        const errText = await response.text()
+        alert('Auth failed: ' + response.status + ' ' + errText)
+        setLoading(false)
+        return
       }
 
       const { token, user } = await response.json()
 
-      // Set the JWT so all future Supabase requests use it
-      setSupabaseAuth(token)
+      if (!user) {
+        alert('No user in auth response')
+        setLoading(false)
+        return
+      }
 
+      setSupabaseAuth(token)
       setUser(user)
     } catch (error) {
-      console.error('Auth error:', error)
-    } finally {
+      alert('Auth error: ' + error.message)
       setLoading(false)
     }
   }
